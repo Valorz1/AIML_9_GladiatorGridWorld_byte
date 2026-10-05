@@ -1,0 +1,12 @@
+{
+  "episodes": 5000,
+  "shortest_possible_path": 18,
+  "trained_agent_outcome": "goal",
+  "trained_agent_moves": 18,
+  "found_optimal_path": true,
+  "first_win_episode": 323,
+  "win_rate_first_500_pct": 0.4,
+  "win_rate_last_500_pct": 99.2,
+  "trap_rate_first_500_pct": 67.8,
+  "trap_rate_last_500_pct": 0.8
+}

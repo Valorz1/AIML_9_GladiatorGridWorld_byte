@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gladiator Grid World · Q-Learning agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --night: #14213d;
+    --night-2: #1d2f52;
+    --ink: #e8ecf1;
+    --muted: #a9b4c4;
+    --floor: #d9dee3;
+    --wall: #3a4450;
+    --trap: #e0457b;
+    --goal: #f2b33d;
+    --start: #7fb8e6;
+    --agent: #2ec4b6;
+    --cell: min(8.4vw, 54px);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--night);
+    color: var(--ink);
+    font: 400 1rem/1.6 "IBM Plex Sans", system-ui, sans-serif;
+  }
+  main {
+    max-width: 1080px;
+    grid-template-rows: auto 1fr;
+    margin: 0 auto;
+    padding: 48px 24px 64px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 48px;
+    align-items: start;
+  }
+  header { grid-column: 1; grid-row: 1; }
+  .controls { grid-column: 1; grid-row: 2; }
+  .arena-wrap { grid-column: 2; grid-row: 1 / span 2; }
+  .rules { grid-row: 3; }
+  h1 {
+    font: 700 clamp(2.2rem, 5vw, 3.4rem)/1.05 "Chakra Petch", sans-serif;
+    letter-spacing: -0.01em;
+    margin: 0 0 16px;
+  }
+  .intro { max-width: 44ch; color: var(--muted); margin: 0 0 32px; }
+  .intro strong { color: var(--ink); font-weight: 600; }
+
+  /* controls */
+  .control { margin-bottom: 24px; max-width: 420px; }
+  .control label { display: block; font-weight: 600; margin-bottom: 8px; }
+  input[type=range] { width: 100%; accent-color: var(--agent); }
+  .ticks { display: flex; justify-content: space-between; font-size: .75rem; color: var(--muted); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  button {
+    font: 600 1rem "IBM Plex Sans", sans-serif;
+    background: var(--agent);
+    color: var(--night);
+    border: 0;
+    border-radius: 6px;
+    padding: 10px 20px;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.08); }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--goal); outline-offset: 3px; }
+  .toggle { display: flex; gap: 8px; align-items: center; color: var(--muted); cursor: pointer; }
+
+  .result {
+    margin-top: 28px;
+    padding: 16px 20px;
+    border-left: 4px solid var(--muted);
+    background: var(--night-2);
+    max-width: 420px;
+    min-height: 5.2em;
+  }
+  .result[data-outcome=goal] { border-color: var(--goal); }
+  .result[data-outcome=trap] { border-color: var(--trap); }
+  .result b { font-family: "Chakra Petch", sans-serif; font-size: 1.25rem; display: block; }
+
+  /* arena */
+  .arena-wrap { position: relative; }
+  .arena {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(10, var(--cell));
+    grid-template-rows: repeat(10, var(--cell));
+    gap: 3px;
+    padding: 10px;
+    background: var(--night-2);
+    border-radius: 10px;
+  }
+  .tile {
+    border-radius: 4px;
+    background: var(--floor);
+    display: grid;
+    place-items: center;
+    font: 700 calc(var(--cell) * .38) "Chakra Petch", sans-serif;
+    color: var(--night);
+    position: relative;
+  }
+  .tile.wall { background: var(--wall); }
+  .tile.trap { background: var(--trap); color: #fff; }
+  .tile.goal { background: var(--goal); }
+  .tile.start { background: var(--start); }
+  .tile.trail::after {
+    content: "";
+    position: absolute;
+    width: 34%; height: 34%;
+    border-radius: 50%;
+    background: var(--agent);
+    opacity: .55;
+  }
+  .tile .arrow { color: #fff; font-size: calc(var(--cell) * .42); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .agent {
+    position: absolute;
+    width: calc(var(--cell) * .66);
+    height: calc(var(--cell) * .66);
+    border-radius: 50%;
+    background: var(--agent);
+    border: 3px solid #fff;
+    box-shadow: 0 0 0 4px rgba(46,196,182,.35);
+    transition: transform .22s ease-out;
+    pointer-events: none;
+  }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: .85rem; color: var(--muted); }
+  .legend span::before {
+    content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 3px;
+    margin-right: 6px; vertical-align: -1px; background: var(--c);
+  }
+
+  .rules { grid-column: 1 / -1; border-top: 1px solid var(--night-2); padding-top: 32px; }
+  .rules h2 { font: 700 1.4rem "Chakra Petch", sans-serif; margin: 0 0 12px; }
+  table { border-collapse: collapse; min-width: 320px; }
+  td { padding: 6px 24px 6px 0; border-bottom: 1px solid var(--night-2); }
+  td:last-child { font-weight: 600; text-align: right; }
+  .rules p { color: var(--muted); max-width: 70ch; }
+  a { color: var(--agent); }
+
+  @media (max-width: 860px) {
+    main { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 32px; padding: 32px 20px 48px; }
+    table { min-width: 0; width: 100%; }
+    header, .controls, .arena-wrap, .rules { grid-column: 1; grid-row: auto; }
+    .arena-wrap { justify-self: center; }
+    :root { --cell: min(8.2vw, 46px); }
+  }
+  @media (prefers-reduced-motion: reduce) { .agent { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Gladiator Grid World</h1>
+    <p class="intro">
+      A Q-Learning agent starts with no idea where anything is. Over
+      <strong id="episodes">5,000</strong> attempts it learns to cross the arena
+      to the gold goal, avoid every trap, and take the
+      <strong>shortest possible route</strong>. Move the slider to see how its
+      best route changed during training.
+    </p>
+  </header>
+
+  <div class="arena-wrap">
+    <div class="arena" id="arena" aria-label="Arena: 10 by 10 grid"></div>
+    <div class="legend">
+      <span style="--c: var(--start)">Start</span>
+      <span style="--c: var(--goal)">Goal</span>
+      <span style="--c: var(--wall)">Wall</span>
+      <span style="--c: var(--trap)">Trap (−100)</span>
+      <span style="--c: var(--agent)">Agent</span>
+    </div>
+  </div>
+
+  <section class="controls">
+    <div class="control">
+      <label for="checkpoint">Agent's best route after episode <span id="epLabel"></span></label>
+      <input type="range" id="checkpoint" min="0" step="1">
+      <div class="ticks"><span>Untrained</span><span>Fully trained</span></div>
+    </div>
+    <div class="row">
+      <button id="play" type="button">Run the agent</button>
+      <label class="toggle"><input type="checkbox" id="showValues"> Show what it learned</label>
+    </div>
+    <div class="result" id="result" aria-live="polite"></div>
+  </section>
+
+  <section class="rules">
+    <h2>Arena rules</h2>
+    <table>
+      <tr><td>Each move</td><td>−1</td></tr>
+      <tr><td>Walk into a wall or the edge</td><td>−5, stay in place</td></tr>
+      <tr><td>Step on a trap</td><td>−100, episode lost</td></tr>
+      <tr><td>Reach the goal</td><td>+100, episode won</td></tr>
+      <tr><td>Still walking after 100 moves</td><td>Episode lost</td></tr>
+    </table>
+    <p>
+      Because every move costs a point, the agent earns the most by reaching the goal
+      in the fewest steps. With "Show what it learned" on, each tile is shaded by how
+      valuable the agent thinks it is (brighter is better) and the arrow is the move it
+      would make there. Tiles far from the winning route stay dark, because the agent
+      rarely needed to visit them.
+    </p>
+    <p>Built with NumPy for AVIP 2026, B.Y.T.E by Arithmatrix, AI/ML Task 9.</p>
+  </section>
+</main>
+
+<script src="replay_data.js"></script>
+<script>
+(() => {
+  const R = window.REPLAY;
+  const arenaEl = document.getElementById("arena");
+  const slider = document.getElementById("checkpoint");
+  const epLabel = document.getElementById("epLabel");
+  const result = document.getElementById("result");
+  const playBtn = document.getElementById("play");
+  const showValues = document.getElementById("showValues");
+  const ARROWS = ["↑", "→", "↓", "←"];
+  const rows = R.arena.length, cols = R.arena[0].length;
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  document.getElementById("episodes").textContent = R.episodes.toLocaleString();
+  slider.max = R.snapshots.length - 1;
+  slider.value = R.snapshots.length - 1;
+
+  // build tiles
+  const tiles = [];
+  R.arena.forEach((row, r) => [...row].forEach((ch, c) => {
+    const t = document.createElement("div");
+    t.className = "tile " + ({"#": "wall", "T": "trap", "G": "goal", "S": "start"}[ch] || "floor");
+    t.dataset.ch = ch;
+    t.textContent = {"T": "✕", "G": "G", "S": "S"}[ch] || "";
+    arenaEl.appendChild(t);
+    tiles.push(t);
+  }));
+  const agent = document.createElement("div");
+  agent.className = "agent";
+  arenaEl.appendChild(agent);
+
+  function placeAgent([r, c]) {
+    const t = tiles[r * cols + c];
+    const size = agent.offsetWidth;
+    agent.style.transform =
+      `translate(${t.offsetLeft + (t.offsetWidth - size) / 2}px, ${t.offsetTop + (t.offsetHeight - size) / 2}px)`;
+  }
+
+  // value overlay: brighter = higher learned value
+  const vals = R.values.filter((_, i) => ".S".includes(R.arena[Math.floor(i / cols)][i % cols]));
+  const vMin = Math.min(...vals), vMax = Math.max(...vals);
+  function paintValues() {
+    tiles.forEach((t, i) => {
+      const ch = t.dataset.ch;
+      if (!".S".includes(ch)) return;
+      if (showValues.checked) {
+        const k = (R.values[i] - vMin) / (vMax - vMin);
+        // dark navy -> teal -> gold as value rises
+        const hue = 215 - 170 * k, light = 22 + 40 * k;
+        t.style.background = `hsl(${hue} 60% ${light}%)`;
+        t.innerHTML = `<span class="arrow">${ARROWS[R.bestAction[i]]}</span>`;
+      } else {
+        t.style.background = "";
+        t.textContent = ch === "S" ? "S" : "";
+      }
+    });
+  }
+
+  function describe(snap) {
+    const moves = snap.path.length - 1;
+    result.dataset.outcome = snap.outcome;
+    if (snap.outcome === "goal") {
+      const best = moves === R.shortest;
+      result.innerHTML = `<b>Reached the goal in ${moves} moves</b>` +
+        (best ? `That's the shortest possible route (${R.shortest} moves).`
+              : `The shortest possible route is ${R.shortest} moves.`);
+    } else if (snap.outcome === "trap") {
+      result.innerHTML = `<b>Stepped on a trap after ${moves} moves</b>It hasn't learned where the traps are yet.`;
+    } else {
+      result.innerHTML = `<b>Wandered for ${moves} moves without reaching the goal</b>Early on, its best guesses go in circles.`;
+    }
+  }
+
+  let timer = null;
+  function clearTrail() { tiles.forEach(t => t.classList.remove("trail")); }
+  function stop() { clearInterval(timer); timer = null; playBtn.textContent = "Run the agent"; }
+
+  function showSnapshot(animate) {
+    stop();
+    const snap = R.snapshots[+slider.value];
+    epLabel.textContent = snap.episode.toLocaleString();
+    clearTrail();
+    result.dataset.outcome = "";
+    result.innerHTML = "";
+    placeAgent(snap.path[0]);
+    if (!animate || reduceMotion) {
+      snap.path.forEach(([r, c]) => tiles[r * cols + c].classList.add("trail"));
+      placeAgent(snap.path[snap.path.length - 1]);
+      describe(snap);
+      return;
+    }
+    let i = 0;
+    playBtn.textContent = "Stop";
+    timer = setInterval(() => {
+      const [r, c] = snap.path[i];
+      tiles[r * cols + c].classList.add("trail");
+      placeAgent(snap.path[i]);
+      if (++i >= snap.path.length) { stop(); describe(snap); }
+    }, 230);
+  }
+
+  slider.addEventListener("input", () => showSnapshot(false));
+  playBtn.addEventListener("click", () => timer ? (stop(), showSnapshot(false)) : showSnapshot(true));
+  showValues.addEventListener("change", paintValues);
+  addEventListener("resize", () => {
+    const snap = R.snapshots[+slider.value];
+    if (!timer) placeAgent(snap.path[snap.path.length - 1]);
+  });
+
+  requestAnimationFrame(() => showSnapshot(false));
+})();
+</script>
+</body>
+</html>
